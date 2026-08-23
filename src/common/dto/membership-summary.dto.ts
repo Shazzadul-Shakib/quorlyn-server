@@ -8,6 +8,12 @@ export class MembershipSummaryDto {
   @ApiProperty()
   organizationName: string;
 
+  @ApiProperty({
+    description:
+      "False if the organization's own platform access is suspended (superadmin-controlled), independent of this membership's own status.",
+  })
+  organizationIsActive: boolean;
+
   @ApiProperty({ enum: OrgRole })
   role: OrgRole;
 

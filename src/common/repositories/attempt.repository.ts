@@ -343,7 +343,7 @@ export class AttemptRepository {
           FLOOR(
             (COALESCE(a."score", 0)::float / NULLIF(a."maxScore", 0)) * ${buckets}
           )::int,
-          ${buckets} - 1
+          (${buckets} - 1)::int
         )        AS "bucket",
         COUNT(*) AS "count"
       FROM "Attempt" a
@@ -354,7 +354,7 @@ export class AttemptRepository {
       ORDER BY 1
     `;
     return rows.map((row) => ({
-      bucket: row.bucket,
+      bucket: Number(row.bucket),
       count: Number(row.count),
     }));
   }

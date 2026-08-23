@@ -132,4 +132,13 @@ export class MembershipRepository {
       },
     });
   }
+
+  async countActiveByRole(): Promise<{ role: OrgRole; count: number }[]> {
+    const rows = await this.prisma.membership.groupBy({
+      by: ['role'],
+      where: { status: MembershipStatus.ACTIVE },
+      _count: { _all: true },
+    });
+    return rows.map((row) => ({ role: row.role, count: row._count._all }));
+  }
 }

@@ -32,6 +32,7 @@ Writing conventions, and when an ADR is warranted at all:
 | [0007](0007-active-organization-claim.md) | The active organization is a claim in the access token, selected explicitly |
 | [0008](0008-organization-permissions.md) | Coarse `OrgRole` plus explicit `Permission[]` grants on the membership |
 | [0009](0009-batch-invitations.md) | Batch invites issue one token per recipient and report per-address outcomes |
+| [0021](0021-organization-active-status.md) | `Organization.isActive` — a platform-level suspend switch, separate from per-member `Membership.status` |
 
 **Quiz authoring and sharing**
 

@@ -109,6 +109,9 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   joinCode  String   @unique
+  // Platform-level kill switch (superadmin-only), separate from a member's
+  // own Membership.status. See ADR-0021.
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

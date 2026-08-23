@@ -17,6 +17,7 @@ import { Permission, PlatformRole } from '@prisma/client';
 import { OrganizationsService } from './organizations.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
+import { SetOrganizationStatusDto } from './dto/set-organization-status.dto';
 import { OrganizationResponseDto } from './dto/organization-response.dto';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { PlatformRoles } from '../../common/decorators/platform-roles.decorator';
@@ -97,5 +98,19 @@ export class OrganizationsController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<OrganizationResponseDto> {
     return this.organizationsService.findById(id, currentUser);
+  }
+
+  @Patch(':id/status')
+  @PlatformRoles(PlatformRole.SUPERADMIN)
+  @ApiOperation({
+    summary:
+      "Suspend or restore an organization's platform access (superadmin)",
+  })
+  @ApiResponse({ status: 200, type: OrganizationResponseDto })
+  setStatus(
+    @Param('id') id: string,
+    @Body() dto: SetOrganizationStatusDto,
+  ): Promise<OrganizationResponseDto> {
+    return this.organizationsService.setActive(id, dto.isActive);
   }
 }
