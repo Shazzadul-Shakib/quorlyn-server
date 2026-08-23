@@ -115,6 +115,26 @@ The API listens on `PORT` (default `5000`). Interactive API docs are served at
 | `pnpm db:seed`           | Seed the superadmin user                    |
 | `pnpm lint`              | ESLint with autofix                         |
 
+## Test accounts (local dev)
+
+Seeded directly in the database for exercising the API without going through
+the email-invite flow (see `/docs` for the full route list). Not real users —
+password is intentionally weak and reused across all three.
+
+Organization: `Dummy Test Org` — join code `DUMYTEST`
+
+| Role                | Email               | Password       | Notes                                            |
+| ------------------- | ------------------- | -------------- | ------------------------------------------------- |
+| Org owner (teacher)  | `owner@test.local`   | `Password123!` | `isOrgOwner`, all permissions                     |
+| Teacher (non-owner)  | `teacher@test.local` | `Password123!` | `MANAGE_QUIZZES` + `VIEW_RESULTS` only            |
+| Student              | `student@test.local` | `Password123!` | device-locked — send a consistent `X-Device-Id`   |
+
+Superadmin credentials come from `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD` in
+`.env` (see `pnpm db:seed`) and are not duplicated here.
+
+Login via `POST /auth/login`, then `POST /auth/organizations/{orgId}/select`
+before calling any org-scoped route.
+
 ## Roles and permissions
 
 Platform authority lives on the user; organization authority lives on the

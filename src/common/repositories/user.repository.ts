@@ -9,6 +9,10 @@ export interface CreateUserInput {
   singleDeviceEnforced: boolean;
 }
 
+export type UserWithMembershipCount = User & {
+  _count: { memberships: number };
+};
+
 @Injectable()
 export class UserRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -19,6 +23,26 @@ export class UserRepository {
 
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
+  }
+
+  findManyPaginated(
+    take: number,
+    skip: number,
+    q?: string,
+  ): Promise<UserWithMembershipCount[]> {
+    return this.prisma.user.findMany({
+      where: q ? { email: { contains: q, mode: 'insensitive' } } : undefined,
+      include: { _count: { select: { memberships: true } } },
+      orderBy: { createdAt: 'desc' },
+      take,
+      skip,
+    });
+  }
+
+  count(q?: string): Promise<number> {
+    return this.prisma.user.count({
+      where: q ? { email: { contains: q, mode: 'insensitive' } } : undefined,
+    });
   }
 
   async create(

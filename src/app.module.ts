@@ -26,6 +26,7 @@ import { StudentsModule } from './module/students/students.module';
 import { QuizzesModule } from './module/quizzes/quizzes.module';
 import { AttemptsModule } from './module/attempts/attempts.module';
 import { DashboardModule } from './module/dashboard/dashboard.module';
+import { AdminModule } from './module/admin/admin.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { DashboardModule } from './module/dashboard/dashboard.module';
     QuizzesModule,
     AttemptsModule,
     DashboardModule,
+    AdminModule,
   ],
   providers: [
     // Order matters: authenticate, then platform role, then organization

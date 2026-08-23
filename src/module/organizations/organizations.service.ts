@@ -137,6 +137,23 @@ export class OrganizationsService {
     return toOrganizationResponse(organization);
   }
 
+  /**
+   * Platform-level kill switch (superadmin only). Existing sessions inside
+   * this org stop working within one access-token lifetime, the same way a
+   * suspended Membership already does — see OrgClaimService.resolveOrThrow.
+   */
+  async setActive(
+    id: string,
+    isActive: boolean,
+  ): Promise<OrganizationResponseDto> {
+    await this.requireOrganization(id);
+    const organization = await this.organizationRepository.setActive(
+      id,
+      isActive,
+    );
+    return toOrganizationResponse(organization);
+  }
+
   /** Invalidates a leaked join code without disturbing existing members. */
   async rotateJoinCode(id: string): Promise<OrganizationResponseDto> {
     await this.requireOrganization(id);

@@ -18,6 +18,7 @@ export function toMembershipSummary(
   return {
     organizationId: membership.organizationId,
     organizationName: membership.organization.name,
+    organizationIsActive: membership.organization.isActive,
     role: membership.role,
     isOrgOwner: membership.isOrgOwner,
     status: membership.status,

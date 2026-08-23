@@ -27,18 +27,30 @@ export class OrgClaimService {
    * Throws if the user may not act in the organization. The superadmin may
    * select any organization and acts with owner-equivalent authority; they
    * hold no membership row, so the claim is synthesised.
+   *
+   * A suspended organization (Organization.isActive = false, ADR-0021)
+   * blocks everyone from entering its claim — the superadmin included, so
+   * flipping the switch can't be bypassed by the same actor who set it.
+   * Un-suspending is unaffected: it operates on the organization id
+   * directly and never goes through this claim.
    */
   async resolveOrThrow(
     userId: string,
     organizationId: string,
     platformRole: PlatformRole,
   ): Promise<OrgClaim> {
+    const organization =
+      await this.organizationRepository.findById(organizationId);
+    if (!organization) {
+      throw new ForbiddenException('Organization not found');
+    }
+    if (!organization.isActive) {
+      throw new ForbiddenException(
+        "This organization's platform access has been suspended",
+      );
+    }
+
     if (platformRole === PlatformRole.SUPERADMIN) {
-      const organization =
-        await this.organizationRepository.findById(organizationId);
-      if (!organization) {
-        throw new ForbiddenException('Organization not found');
-      }
       return {
         id: organization.id,
         role: OrgRole.TEACHER,
@@ -77,7 +89,9 @@ export class OrgClaimService {
     const memberships =
       await this.membershipRepository.findManyByUserWithOrganization(userId);
     const active = memberships.filter(
-      (membership) => membership.status === MembershipStatus.ACTIVE,
+      (membership) =>
+        membership.status === MembershipStatus.ACTIVE &&
+        membership.organization.isActive,
     );
     return active.length === 1 ? this.toClaim(active[0]) : null;
   }

@@ -79,6 +79,7 @@ flow below — tell the user that before they clear anything.
   "user": { "id": "…", "email": "…", "platformRole": "MEMBER", "singleDeviceEnforced": true },
   "memberships": [
     { "organizationId": "…", "organizationName": "Dhaka Model School",
+      "organizationIsActive": true,
       "role": "TEACHER", "isOrgOwner": true, "status": "ACTIVE",
       "permissions": ["MANAGE_QUIZZES", "VIEW_RESULTS"] }
   ],
@@ -92,6 +93,10 @@ flow below — tell the user that before they clear anything.
   picker.
 - `org === null` **and** `memberships.length === 0` → the account exists but
   belongs to nothing yet. Offer "join with a code" or "open your invite link".
+- A membership with `organizationIsActive: false` (ADR-0021) is excluded from
+  auto-select even if it's the user's only one, so `org` comes back `null`.
+  Show it in the picker as suspended rather than selectable — attempting to
+  select it 403s.
 
 ### The device conflict (409)
 
@@ -475,8 +480,20 @@ membership; org owners and the superadmin satisfy any permission.
 | PATCH | `/organizations/current` `{ name }` ✱ | `MANAGE_ORGANIZATION` |
 | POST | `/organizations/current/rotate-join-code` ✱ | `MANAGE_ORGANIZATION` |
 | GET | `/organizations/{id}` | superadmin, or a member of it |
+| PATCH | `/organizations/{id}/status` `{ isActive }` | superadmin |
 
 Rotating the join code invalidates the old one — confirm before doing it.
+
+**`isActive` (ADR-0021) is a platform-level kill switch, separate from a
+member's own `Membership.status`.** Every `OrganizationResponseDto` and
+`MembershipSummaryDto` (`organizationIsActive`) carries it. Setting it
+`false` blocks *everyone* — including the superadmin — from selecting into
+that organization: `POST /auth/organizations/{id}/select` and the login/
+refresh auto-select both 403 with `"This organization's platform access has
+been suspended"`. An already-issued token for that org keeps working until
+its next refresh (same bounded window as a suspended membership — see
+§Refresh). Confirm before turning this off; it is reversible by the same
+endpoint.
 
 ### Members and invites
 

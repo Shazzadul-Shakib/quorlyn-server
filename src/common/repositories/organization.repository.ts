@@ -32,6 +32,10 @@ export class OrganizationRepository {
     return this.prisma.organization.count();
   }
 
+  countActive(): Promise<number> {
+    return this.prisma.organization.count({ where: { isActive: true } });
+  }
+
   async create(
     data: CreateOrganizationInput,
     tx: Prisma.TransactionClient = this.prisma,
@@ -64,5 +68,12 @@ export class OrganizationRepository {
 
   update(id: string, data: { name?: string }): Promise<Organization> {
     return this.prisma.organization.update({ where: { id }, data });
+  }
+
+  setActive(id: string, isActive: boolean): Promise<Organization> {
+    return this.prisma.organization.update({
+      where: { id },
+      data: { isActive },
+    });
   }
 }

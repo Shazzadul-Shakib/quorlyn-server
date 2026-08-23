@@ -8,6 +8,7 @@ export function toOrganizationResponse(
     id: organization.id,
     name: organization.name,
     joinCode: organization.joinCode,
+    isActive: organization.isActive,
     createdAt: organization.createdAt,
   };
 }
