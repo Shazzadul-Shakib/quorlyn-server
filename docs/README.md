@@ -10,7 +10,7 @@ need to change often itself.
 | --- | --- | --- | --- |
 | Front door | [../README.md](../README.md) | Someone skimming for 30 seconds (recruiter, interviewer, future you) | Rarely — only when the pitch, stack, or setup steps change |
 | System map | [ARCHITECTURE.md](ARCHITECTURE.md) | Someone about to work in the codebase who needs the mental model | When a flow changes shape (new guard, new model relationship, new module) |
-| Decision log | [adr/](adr/) | Someone asking "why is it built this way" | Every time you make a non-obvious call — append-only, never edited after acceptance |
+| Decision log | [adr/](adr/), indexed in [adr/README.md](adr/README.md) | Someone asking "why is it built this way" | Every time you make a non-obvious call — append-only, never edited after acceptance |
 
 The rule of thumb: **README says what and why this project exists,
 ARCHITECTURE says how it works today, ADRs say why it works that way instead
@@ -82,3 +82,19 @@ items); if everything is "notable," nothing is.
   here — `git log` is authoritative).
 - Planning/TODO content — that belongs in issues/a project board, not in
   docs describing the system as it exists today.
+
+## Conventions vs. documentation
+
+[CLAUDE.md](../CLAUDE.md) at the repo root is a fourth, separate thing: not a
+description of the system, but the rules and per-change checklist anyone
+working in this codebase follows — layering, tenancy, Swagger, migrations,
+and which of the three layers above a given change needs to update. The
+detailed procedures live beside it in `.claude/skills/` (`/api-endpoint`,
+`/schema-change`, `/query-review`, `/write-adr`, `/verify`).
+
+Update it when a **convention** changes — a new rule, a rule that turned out
+to be wrong, a command that replaced another. Don't mirror architecture prose
+into it; link to ARCHITECTURE.md or the relevant ADR instead. When an ADR
+establishes a rule that constrains future code (as ADR-0002 and ADR-0005 do),
+add the one-line rule to CLAUDE.md and link the ADR for the reasoning — the
+ADR stays the record, CLAUDE.md carries only the instruction.

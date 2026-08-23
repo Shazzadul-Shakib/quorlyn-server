@@ -1,14 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Role, User } from '@prisma/client';
+import { Prisma, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toUniqueConstraintError } from './errors';
 
 export interface CreateUserInput {
   email: string;
   passwordHash: string;
-  role: Role;
-  organizationId: string | null;
-  isOrgOwner: boolean;
+  singleDeviceEnforced: boolean;
 }
 
 @Injectable()
@@ -36,5 +34,16 @@ export class UserRepository {
       }
       throw error;
     }
+  }
+
+  async setSingleDeviceEnforced(
+    id: string,
+    enforced: boolean,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    await tx.user.update({
+      where: { id },
+      data: { singleDeviceEnforced: enforced },
+    });
   }
 }

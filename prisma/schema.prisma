@@ -8,10 +8,28 @@ generator client {
   provider = "prisma-client-js"
 }
 
-enum Role {
+// ---------------------------------------------------------------- identity
+
+enum PlatformRole {
   SUPERADMIN
+  MEMBER
+}
+
+enum OrgRole {
   TEACHER
   STUDENT
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum Permission {
+  MANAGE_MEMBERS
+  MANAGE_QUIZZES
+  VIEW_RESULTS
+  MANAGE_ORGANIZATION
 }
 
 enum InviteStatus {
@@ -21,6 +39,72 @@ enum InviteStatus {
   REVOKED
 }
 
+enum ChallengePurpose {
+  DEVICE_CHANGE
+}
+
+// ----------------------------------------------------------------- content
+
+enum ContentFormat {
+  PLAIN
+  LATEX_MIXED
+}
+
+enum Language {
+  EN
+  BN
+  MIXED
+}
+
+// -------------------------------------------------------------------- quiz
+
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTI_CHOICE
+  TRUE_FALSE
+}
+
+enum ScoringPolicy {
+  BEST
+  FIRST
+  LATEST
+}
+
+// ----------------------------------------------------------------- attempt
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+}
+
+enum SubmissionCause {
+  MANUAL
+  TIMER_EXPIRED
+  DISCONNECTED
+  PROCTOR_VIOLATION
+  QUIZ_CLOSED
+  ADMIN_CLOSED
+}
+
+enum ProctorEventType {
+  TAB_HIDDEN
+  WINDOW_BLUR
+  FULLSCREEN_EXIT
+  COPY
+  PASTE
+  RECONNECT
+  DEVICE_CHANGED
+}
+
+// ------------------------------------------------------------------ models
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
@@ -28,35 +112,61 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users   User[]
-  invites Invite[]
+  memberships Membership[]
+  invites     Invite[]
+  quizzes     Quiz[]
+  attempts    Attempt[]
 }
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
-  passwordHash   String
-  role           Role
-  organizationId String?
-  isOrgOwner     Boolean  @default(false)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                   String       @id @default(cuid())
+  email                String       @unique
+  passwordHash         String
+  platformRole         PlatformRole @default(MEMBER)
+  isActive             Boolean      @default(true)
+  // Set from the path that created the account: students are locked to one
+  // device, teachers are not. Decided at creation because login happens
+  // before an organization — and therefore a role — is known (ADR-0017).
+  singleDeviceEnforced Boolean      @default(true)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
-  organization  Organization?  @relation(fields: [organizationId], references: [id])
-  refreshTokens RefreshToken[]
-  sentInvites   Invite[]       @relation("InviteSender")
+  memberships     Membership[]
+  refreshTokens   RefreshToken[]
+  devices         Device[]
+  emailChallenges EmailChallenge[]
+  sentInvites     Invite[]         @relation("InviteSender")
+  attempts        Attempt[]
+  authoredQuizzes Quiz[]           @relation("QuizAuthor")
+  createdLinks    QuizLink[]       @relation("QuizLinkCreator")
+}
 
-  @@index([organizationId])
+model Membership {
+  id             String           @id @default(cuid())
+  userId         String
+  organizationId String
+  role           OrgRole
+  isOrgOwner     Boolean          @default(false)
+  status         MembershipStatus @default(ACTIVE)
+  permissions    Permission[]     @default([])
+  joinedAt       DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
   @@index([organizationId, role])
+  @@index([userId])
 }
 
 model Invite {
   id             String       @id @default(cuid())
   email          String
-  role           Role
+  role           OrgRole
   organizationId String
   isOrgOwner     Boolean      @default(false)
+  permissions    Permission[] @default([])
   tokenHash      String       @unique
   status         InviteStatus @default(PENDING)
   invitedById    String?
@@ -67,13 +177,30 @@ model Invite {
   organization Organization @relation(fields: [organizationId], references: [id])
   invitedBy    User?        @relation("InviteSender", fields: [invitedById], references: [id])
 
-  @@index([organizationId])
+  @@index([organizationId, status])
   @@index([email])
+}
+
+model Device {
+  id           String    @id @default(cuid())
+  userId       String
+  deviceIdHash String
+  label        String?
+  lastSeenAt   DateTime  @default(now())
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@unique([userId, deviceIdHash])
+  @@index([userId])
 }
 
 model RefreshToken {
   id         String    @id @default(cuid())
   userId     String
+  deviceId   String?
   tokenHash  String    @unique
   expiresAt  DateTime
   revokedAt  DateTime?
@@ -82,7 +209,180 @@ model RefreshToken {
   ipAddress  String?
   createdAt  DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([deviceId])
+}
+
+model EmailChallenge {
+  id         String           @id @default(cuid())
+  userId     String
+  purpose    ChallengePurpose
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int              @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+}
+
+model Quiz {
+  id             String     @id @default(cuid())
+  organizationId String
+  createdById    String
+  title          String
+  description    String?
+  language       Language   @default(MIXED)
+  subject        String?
+  status         QuizStatus @default(DRAFT)
+
+  // Timing and attempt policy (ADR-0012)
+  durationSeconds Int
+  opensAt         DateTime?
+  closesAt        DateTime?
+  maxAttempts     Int           @default(1)
+  scoringPolicy   ScoringPolicy @default(BEST)
+  lateStartCutoff Boolean       @default(true)
+
+  // Presentation and proctoring
+  shuffleQuestions             Boolean @default(true)
+  maxFocusViolations           Int?    @default(3)
+  leaderboardVisibleToStudents Boolean @default(false)
+
+  totalPoints Int       @default(0)
+  publishedAt DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    User         @relation("QuizAuthor", fields: [createdById], references: [id])
+  questions    Question[]
+  attempts     Attempt[]
+  links        QuizLink[]
+
+  @@index([organizationId, status])
+  @@index([createdById])
+}
+
+model Question {
+  id            String        @id @default(cuid())
+  quizId        String
+  type          QuestionType
+  prompt        String
+  contentFormat ContentFormat @default(LATEX_MIXED)
+  points        Int           @default(1)
+  position      Int
+  createdAt     DateTime      @default(now())
+
+  quiz    Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options QuestionOption[]
+  answers AttemptAnswer[]
+
+  @@index([quizId, position])
+}
+
+model QuestionOption {
+  id         String  @id @default(cuid())
+  questionId String
+  text       String
+  isCorrect  Boolean
+  position   Int
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, position])
+}
+
+model QuizLink {
+  id          String    @id @default(cuid())
+  quizId      String
+  tokenHash   String    @unique
+  label       String?
+  expiresAt   DateTime?
+  maxUses     Int?
+  usedCount   Int       @default(0)
+  revokedAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  quiz      Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("QuizLinkCreator", fields: [createdById], references: [id])
+  attempts  Attempt[]
+
+  @@index([quizId])
+}
+
+model Attempt {
+  id             String        @id @default(cuid())
+  quizId         String
+  userId         String
+  organizationId String
+  quizLinkId     String?
+  attemptNumber  Int
+  status         AttemptStatus @default(IN_PROGRESS)
+
+  startedAt       DateTime         @default(now())
+  deadlineAt      DateTime
+  lastHeartbeatAt DateTime         @default(now())
+  submittedAt     DateTime?
+  submissionCause SubmissionCause?
+
+  score    Int?
+  maxScore Int
+
+  // Recomputable from ProctorEvent; kept here so the violation limit is one
+  // conditional update rather than a count query on every reported event.
+  focusViolations Int @default(0)
+
+  deviceId  String?
+  ipAddress String?
+  userAgent String?
+
+  quiz         Quiz            @relation(fields: [quizId], references: [id])
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  quizLink     QuizLink?       @relation(fields: [quizLinkId], references: [id], onDelete: SetNull)
+  answers      AttemptAnswer[]
+  events       ProctorEvent[]
+
+  @@unique([quizId, userId, attemptNumber])
+  @@index([quizId, status])
+  @@index([userId, quizId])
+  @@index([status, deadlineAt])
+  @@index([organizationId, submittedAt])
+}
+
+model AttemptAnswer {
+  id                String   @id @default(cuid())
+  attemptId         String
+  questionId        String
+  selectedOptionIds String[]
+  answeredAt        DateTime @default(now()) @updatedAt
+  isCorrect         Boolean?
+  pointsAwarded     Int?
+
+  attempt  Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId, isCorrect])
+}
+
+model ProctorEvent {
+  id         String           @id @default(cuid())
+  attemptId  String
+  type       ProctorEventType
+  occurredAt DateTime         @default(now())
+  metadata   Json?
+
+  attempt Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId, type])
 }

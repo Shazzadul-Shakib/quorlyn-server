@@ -20,10 +20,16 @@ export class OrganizationRepository {
     return this.prisma.organization.findUnique({ where: { joinCode } });
   }
 
-  findAll(): Promise<Organization[]> {
+  findAll(take = 50, skip = 0): Promise<Organization[]> {
     return this.prisma.organization.findMany({
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
     });
+  }
+
+  count(): Promise<number> {
+    return this.prisma.organization.count();
   }
 
   async create(
@@ -39,5 +45,24 @@ export class OrganizationRepository {
       }
       throw error;
     }
+  }
+
+  async updateJoinCode(id: string, joinCode: string): Promise<Organization> {
+    try {
+      return await this.prisma.organization.update({
+        where: { id },
+        data: { joinCode },
+      });
+    } catch (error) {
+      const conflict = toUniqueConstraintError(error);
+      if (conflict) {
+        throw conflict;
+      }
+      throw error;
+    }
+  }
+
+  update(id: string, data: { name?: string }): Promise<Organization> {
+    return this.prisma.organization.update({ where: { id }, data });
   }
 }

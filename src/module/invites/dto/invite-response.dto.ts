@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { InviteStatus, Role } from '@prisma/client';
+import { InviteStatus, OrgRole, Permission } from '@prisma/client';
 
 export class InviteResponseDto {
   @ApiProperty()
@@ -8,8 +8,8 @@ export class InviteResponseDto {
   @ApiProperty()
   email: string;
 
-  @ApiProperty({ enum: Role })
-  role: Role;
+  @ApiProperty({ enum: OrgRole })
+  role: OrgRole;
 
   @ApiProperty({ enum: InviteStatus })
   status: InviteStatus;
@@ -17,6 +17,12 @@ export class InviteResponseDto {
   @ApiProperty()
   isOrgOwner: boolean;
 
+  @ApiProperty({ enum: Permission, isArray: true })
+  permissions: Permission[];
+
   @ApiProperty()
   expiresAt: Date;
+
+  @ApiProperty()
+  createdAt: Date;
 }

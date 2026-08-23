@@ -1,31 +1,43 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsEnum, IsOptional } from 'class-validator';
-
-/**
- * Deliberately decoupled from Prisma's Role enum: a client can never
- * request SUPERADMIN through this DTO, structurally.
- */
-export enum InvitableRole {
-  TEACHER = 'TEACHER',
-  STUDENT = 'STUDENT',
-}
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OrgRole, Permission } from '@prisma/client';
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsOptional,
+} from 'class-validator';
 
 export class CreateInviteDto {
   @ApiProperty({ example: 'colleague@example.com' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ enum: InvitableRole })
-  @IsEnum(InvitableRole)
-  role: InvitableRole;
-
   @ApiProperty({
-    required: false,
+    enum: OrgRole,
+    description:
+      'OrgRole has no superadmin value, so privilege escalation is structurally impossible here (ADR-0006).',
+  })
+  @IsEnum(OrgRole)
+  role: OrgRole;
+
+  @ApiPropertyOptional({
     default: false,
     description:
-      'Grants org-owner privileges. Only meaningful for TEACHER invites.',
+      'Grants org-owner authority. Only meaningful for TEACHER invites.',
   })
   @IsOptional()
   @IsBoolean()
   isOrgOwner?: boolean;
+
+  @ApiPropertyOptional({
+    enum: Permission,
+    isArray: true,
+    description:
+      'Defaults to MANAGE_QUIZZES + VIEW_RESULTS for teachers; ignored for students.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(Permission, { each: true })
+  permissions?: Permission[];
 }

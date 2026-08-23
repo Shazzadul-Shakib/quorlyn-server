@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { OrgRole } from '@prisma/client';
 
 export class InvitePreviewResponseDto {
   @ApiProperty()
@@ -8,12 +8,18 @@ export class InvitePreviewResponseDto {
   @ApiProperty()
   email: string;
 
-  @ApiProperty({ enum: Role })
-  role: Role;
+  @ApiProperty({ enum: OrgRole })
+  role: OrgRole;
 
   @ApiProperty()
   isOrgOwner: boolean;
 
   @ApiProperty()
   expiresAt: Date;
+
+  @ApiProperty({
+    description:
+      'True when this email already has a Quorlyn account, so the client asks for the existing password instead of a new one.',
+  })
+  accountExists: boolean;
 }

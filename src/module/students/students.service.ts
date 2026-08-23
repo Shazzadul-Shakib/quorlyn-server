@@ -2,14 +2,18 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { OrgRole } from '@prisma/client';
 import { UserRepository } from '../../common/repositories/user.repository';
+import { MembershipRepository } from '../../common/repositories/membership.repository';
 import { OrganizationRepository } from '../../common/repositories/organization.repository';
-import { UniqueConstraintViolationError } from '../../common/repositories/errors';
-import { TokenService } from '../../common/token/token.service';
-import { hashPassword } from '../../common/utils/password.util';
-import { toUserSummary } from '../../common/utils/user-summary.util';
+import { SessionService } from '../../common/session/session.service';
+import type { StartSessionContext } from '../../common/session/session.service';
+import {
+  comparePassword,
+  hashPassword,
+} from '../../common/utils/password.util';
 import { AuthTokensResponseDto } from '../../common/dto/auth-tokens-response.dto';
 import { JoinOrganizationDto } from './dto/join-organization.dto';
 
@@ -17,11 +21,20 @@ import { JoinOrganizationDto } from './dto/join-organization.dto';
 export class StudentsService {
   constructor(
     private readonly userRepository: UserRepository,
+    private readonly membershipRepository: MembershipRepository,
     private readonly organizationRepository: OrganizationRepository,
-    private readonly tokenService: TokenService,
+    private readonly sessionService: SessionService,
   ) {}
 
-  async join(dto: JoinOrganizationDto): Promise<AuthTokensResponseDto> {
+  /**
+   * Self-serve enrolment by join code (ADR-0003). With multi-org membership
+   * an existing account simply gains another membership, which is what lets
+   * one student sit exams at several organizations (ADR-0006).
+   */
+  async join(
+    dto: JoinOrganizationDto,
+    context: StartSessionContext,
+  ): Promise<AuthTokensResponseDto> {
     const organization = await this.organizationRepository.findByJoinCode(
       dto.joinCode.trim().toUpperCase(),
     );
@@ -29,26 +42,54 @@ export class StudentsService {
       throw new NotFoundException('Invalid join code');
     }
 
-    const passwordHash = await hashPassword(dto.password);
+    const email = dto.email.trim().toLowerCase();
+    const existingUser = await this.userRepository.findByEmail(email);
 
-    try {
-      const user = await this.userRepository.create({
-        email: dto.email,
-        passwordHash,
-        role: Role.STUDENT,
-        organizationId: organization.id,
-        isOrgOwner: false,
-      });
-      const tokens = await this.tokenService.issueTokenPair(user);
-      return { ...tokens, user: toUserSummary(user) };
-    } catch (error) {
-      if (
-        error instanceof UniqueConstraintViolationError &&
-        error.violates('email')
-      ) {
-        throw new ConflictException('A user with this email already exists');
+    if (existingUser) {
+      const matches = await comparePassword(
+        dto.password,
+        existingUser.passwordHash,
+      );
+      if (!matches || !existingUser.isActive) {
+        throw new UnauthorizedException(
+          'This email already has an account; sign in with its password to join',
+        );
       }
-      throw error;
+      const membership = await this.membershipRepository.findByUserAndOrg(
+        existingUser.id,
+        organization.id,
+      );
+      if (membership) {
+        throw new ConflictException(
+          'You are already a member of this organization',
+        );
+      }
+      await this.membershipRepository.create({
+        userId: existingUser.id,
+        organizationId: organization.id,
+        role: OrgRole.STUDENT,
+      });
+      return this.sessionService.start(existingUser, {
+        ...context,
+        preferredOrganizationId: organization.id,
+      });
     }
+
+    const passwordHash = await hashPassword(dto.password);
+    const user = await this.userRepository.create({
+      email,
+      passwordHash,
+      singleDeviceEnforced: true,
+    });
+    await this.membershipRepository.create({
+      userId: user.id,
+      organizationId: organization.id,
+      role: OrgRole.STUDENT,
+    });
+
+    return this.sessionService.start(user, {
+      ...context,
+      preferredOrganizationId: organization.id,
+    });
   }
 }

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm lint)",
+      "Bash(pnpm build)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm format)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(pnpm exec eslint:*)",
+      "Bash(pnpm exec prettier:*)",
+      "Bash(pnpm prisma:generate)",
+      "Bash(pnpm install:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(node .claude/hooks/*)"
+    ],
+    "ask": [
+      "Bash(pnpm prisma:migrate:*)",
+      "Bash(pnpm prisma:deploy:*)",
+      "Bash(pnpm db:seed:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm start:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Bash(pnpm exec prisma migrate reset:*)",
+      "Bash(pnpm exec prisma db push:*)",
+      "Bash(npx prisma migrate reset:*)",
+      "Bash(npx prisma db push:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-checks.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

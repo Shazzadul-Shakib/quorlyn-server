@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { RefreshToken, User } from '@prisma/client';
+import { Device, Prisma, RefreshToken, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateRefreshTokenInput {
   userId: string;
+  deviceId?: string | null;
   tokenHash: string;
   expiresAt: Date;
   userAgent?: string;
@@ -14,8 +15,11 @@ export interface CreateRefreshTokenInput {
 export class RefreshTokenRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(data: CreateRefreshTokenInput): Promise<RefreshToken> {
-    return this.prisma.refreshToken.create({ data });
+  create(
+    data: CreateRefreshTokenInput,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<RefreshToken> {
+    return tx.refreshToken.create({ data });
   }
 
   findByTokenHashWithUser(
@@ -24,6 +28,27 @@ export class RefreshTokenRepository {
     return this.prisma.refreshToken.findUnique({
       where: { tokenHash },
       include: { user: true },
+    });
+  }
+
+  /**
+   * The live session on some other device, if any — the signal that a login
+   * from a new device needs email verification first (ADR-0017).
+   */
+  findActiveOnOtherDevice(
+    userId: string,
+    deviceId: string | null,
+    now: Date,
+  ): Promise<(RefreshToken & { device: Device | null }) | null> {
+    return this.prisma.refreshToken.findFirst({
+      where: {
+        userId,
+        revokedAt: null,
+        expiresAt: { gt: now },
+        ...(deviceId ? { NOT: { deviceId } } : {}),
+      },
+      include: { device: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -53,8 +78,11 @@ export class RefreshTokenRepository {
     });
   }
 
-  async revokeAllForUser(userId: string): Promise<void> {
-    await this.prisma.refreshToken.updateMany({
+  async revokeAllForUser(
+    userId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    await tx.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });

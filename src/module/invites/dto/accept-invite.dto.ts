@@ -6,7 +6,11 @@ export class AcceptInviteDto {
   @IsString()
   token: string;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Sets the password for a new account, or authenticates an existing one with this email.',
+    minLength: 8,
+  })
   @IsString()
   @MinLength(8)
   password: string;
