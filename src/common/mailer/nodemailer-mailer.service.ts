@@ -7,10 +7,13 @@ import {
 } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { EnvConfig } from '../config/env.validation';
-import { MailerService, SendInviteEmailParams } from './mailer.interface';
+import {
+  MailerService,
+  SendDeviceChangeCodeParams,
+  SendInviteEmailParams,
+} from './mailer.interface';
 
 const ROLE_LABEL: Record<SendInviteEmailParams['role'], string> = {
-  SUPERADMIN: 'Superadmin',
   TEACHER: 'Teacher',
   STUDENT: 'Student',
 };
@@ -56,5 +59,21 @@ export class NodemailerMailerService implements MailerService {
     if (previewUrl) {
       this.logger.debug(`Preview: ${previewUrl}`);
     }
+  }
+
+  async sendDeviceChangeCode(
+    params: SendDeviceChangeCodeParams,
+  ): Promise<void> {
+    const deviceNote = params.newDeviceLabel
+      ? ` from ${params.newDeviceLabel}`
+      : '';
+    await this.transporter.sendMail({
+      from: this.from,
+      to: params.to,
+      subject: 'Your Quorlyn device verification code',
+      text: `Someone signed in to your Quorlyn account${deviceNote} on a new device.\n\nYour verification code is ${params.code}. It expires in ${params.expiresInMinutes} minutes.\n\nConfirming will sign you out everywhere else. If this wasn't you, change your password instead.`,
+      html: `<p>Someone signed in to your Quorlyn account${deviceNote} on a new device.</p><p>Your verification code is <strong>${params.code}</strong>. It expires in ${params.expiresInMinutes} minutes.</p><p>Confirming will sign you out everywhere else. If this wasn't you, change your password instead.</p>`,
+    });
+    this.logger.log(`Device change code sent to ${params.to}`);
   }
 }

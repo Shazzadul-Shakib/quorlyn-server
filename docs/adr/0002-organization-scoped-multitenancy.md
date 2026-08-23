@@ -1,6 +1,6 @@
 # ADR-0002: Single-schema multi-tenancy via nullable `organizationId`
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0006](0006-membership-as-the-unit-of-tenancy.md)
 - **Date:** 2026-07-30
 
 ## Context

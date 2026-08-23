@@ -6,18 +6,19 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Organization, Role } from '@prisma/client';
-import { UserRepository } from '../../common/repositories/user.repository';
+import { Organization, OrgRole, PlatformRole } from '@prisma/client';
 import { OrganizationRepository } from '../../common/repositories/organization.repository';
 import { InviteRepository } from '../../common/repositories/invite.repository';
 import { UniqueConstraintViolationError } from '../../common/repositories/errors';
 import { PrismaTransactionRunner } from '../../common/prisma/transaction-runner';
 import { MAILER } from '../../common/mailer/mailer.interface';
 import type { MailerService } from '../../common/mailer/mailer.interface';
+import { CLOCK, type Clock } from '../../common/clock/clock';
 import { generateJoinCode } from '../../common/utils/join-code.util';
 import { generateOpaqueToken, hashToken } from '../../common/utils/token.util';
 import { AuthenticatedUser } from '../../common/token/jwt-payload.interface';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
+import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { OrganizationResponseDto } from './dto/organization-response.dto';
 import { toOrganizationResponse } from './dto/organization-response.util';
 
@@ -29,19 +30,14 @@ export class OrganizationsService {
   private readonly logger = new Logger(OrganizationsService.name);
 
   constructor(
-    private readonly userRepository: UserRepository,
     private readonly organizationRepository: OrganizationRepository,
     private readonly inviteRepository: InviteRepository,
     private readonly transactionRunner: PrismaTransactionRunner,
     @Inject(MAILER) private readonly mailer: MailerService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   async create(dto: CreateOrganizationDto): Promise<OrganizationResponseDto> {
-    const existingUser = await this.userRepository.findByEmail(dto.ownerEmail);
-    if (existingUser) {
-      throw new ConflictException('A user with this email already exists');
-    }
-
     let result:
       { organization: Organization; rawInviteToken: string } | undefined;
 
@@ -57,11 +53,12 @@ export class OrganizationsService {
           await this.inviteRepository.create(
             {
               email: dto.ownerEmail,
-              role: Role.TEACHER,
+              role: OrgRole.TEACHER,
               organizationId: organization.id,
               isOrgOwner: true,
+              permissions: [],
               tokenHash: hashToken(rawInviteToken),
-              expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+              expiresAt: new Date(this.clock.now().getTime() + INVITE_TTL_MS),
             },
             tx,
           );
@@ -88,13 +85,12 @@ export class OrganizationsService {
     }
 
     const { organization, rawInviteToken } = result;
-
     try {
       await this.mailer.sendInviteEmail({
         to: dto.ownerEmail,
         inviteToken: rawInviteToken,
         organizationName: organization.name,
-        role: Role.TEACHER,
+        role: OrgRole.TEACHER,
         isOrgOwner: true,
       });
     } catch (error) {
@@ -106,9 +102,15 @@ export class OrganizationsService {
     return toOrganizationResponse(organization);
   }
 
-  async list(): Promise<OrganizationResponseDto[]> {
-    const organizations = await this.organizationRepository.findAll();
-    return organizations.map(toOrganizationResponse);
+  async list(
+    take: number,
+    skip: number,
+  ): Promise<{ items: OrganizationResponseDto[]; total: number }> {
+    const [organizations, total] = await Promise.all([
+      this.organizationRepository.findAll(take, skip),
+      this.organizationRepository.count(),
+    ]);
+    return { items: organizations.map(toOrganizationResponse), total };
   }
 
   async findById(
@@ -116,16 +118,54 @@ export class OrganizationsService {
     currentUser: AuthenticatedUser,
   ): Promise<OrganizationResponseDto> {
     if (
-      currentUser.role !== Role.SUPERADMIN &&
-      currentUser.organizationId !== id
+      currentUser.platformRole !== PlatformRole.SUPERADMIN &&
+      currentUser.org?.id !== id
     ) {
       throw new ForbiddenException('Cannot access another organization');
     }
+    return toOrganizationResponse(await this.requireOrganization(id));
+  }
 
+  async update(
+    id: string,
+    dto: UpdateOrganizationDto,
+  ): Promise<OrganizationResponseDto> {
+    await this.requireOrganization(id);
+    const organization = await this.organizationRepository.update(id, {
+      name: dto.name,
+    });
+    return toOrganizationResponse(organization);
+  }
+
+  /** Invalidates a leaked join code without disturbing existing members. */
+  async rotateJoinCode(id: string): Promise<OrganizationResponseDto> {
+    await this.requireOrganization(id);
+    for (let attempt = 1; attempt <= MAX_JOIN_CODE_ATTEMPTS; attempt++) {
+      try {
+        const organization = await this.organizationRepository.updateJoinCode(
+          id,
+          generateJoinCode(),
+        );
+        return toOrganizationResponse(organization);
+      } catch (error) {
+        if (
+          error instanceof UniqueConstraintViolationError &&
+          error.violates('joinCode') &&
+          attempt < MAX_JOIN_CODE_ATTEMPTS
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new ConflictException('Could not allocate a unique join code');
+  }
+
+  private async requireOrganization(id: string): Promise<Organization> {
     const organization = await this.organizationRepository.findById(id);
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
-    return toOrganizationResponse(organization);
+    return organization;
   }
 }

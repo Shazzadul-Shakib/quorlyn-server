@@ -8,6 +8,8 @@ export function toInviteResponse(invite: Invite): InviteResponseDto {
     role: invite.role,
     status: invite.status,
     isOrgOwner: invite.isOrgOwner,
+    permissions: invite.permissions,
     expiresAt: invite.expiresAt,
+    createdAt: invite.createdAt,
   };
 }

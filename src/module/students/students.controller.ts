@@ -1,10 +1,15 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Post, Req } from '@nestjs/common';
+import { ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 import { StudentsService } from './students.service';
 import { JoinOrganizationDto } from './dto/join-organization.dto';
 import { AuthTokensResponseDto } from '../../common/dto/auth-tokens-response.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import {
+  DEVICE_ID_HEADER,
+  DeviceId,
+} from '../../common/decorators/device-id.decorator';
 
 @ApiTags('Students')
 @Controller('students')
@@ -14,11 +19,20 @@ export class StudentsController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('join')
+  @ApiHeader({ name: DEVICE_ID_HEADER, required: true })
   @ApiOperation({
-    summary: "Self-register as a student using an organization's join code",
+    summary: 'Join an organization as a student using its join code',
   })
   @ApiResponse({ status: 201, type: AuthTokensResponseDto })
-  join(@Body() dto: JoinOrganizationDto): Promise<AuthTokensResponseDto> {
-    return this.studentsService.join(dto);
+  join(
+    @Body() dto: JoinOrganizationDto,
+    @Req() req: Request,
+    @DeviceId() deviceId: string | null,
+  ): Promise<AuthTokensResponseDto> {
+    return this.studentsService.join(dto, {
+      deviceId,
+      userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
+    });
   }
 }

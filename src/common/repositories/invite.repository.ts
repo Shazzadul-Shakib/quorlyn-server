@@ -1,12 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { Invite, InviteStatus, Prisma, Role } from '@prisma/client';
+import {
+  Invite,
+  InviteStatus,
+  OrgRole,
+  Permission,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateInviteInput {
   email: string;
-  role: Role;
+  role: OrgRole;
   organizationId: string;
   isOrgOwner: boolean;
+  permissions: Permission[];
   tokenHash: string;
   expiresAt: Date;
   invitedById?: string;
@@ -23,6 +30,13 @@ export class InviteRepository {
     return tx.invite.create({ data });
   }
 
+  createMany(
+    data: CreateInviteInput[],
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<Invite[]> {
+    return tx.invite.createManyAndReturn({ data });
+  }
+
   findPendingByEmailAndOrg(
     email: string,
     organizationId: string,
@@ -32,10 +46,30 @@ export class InviteRepository {
     });
   }
 
-  findManyByOrg(organizationId: string): Promise<Invite[]> {
+  findPendingByEmailsAndOrg(
+    emails: string[],
+    organizationId: string,
+  ): Promise<Invite[]> {
     return this.prisma.invite.findMany({
-      where: { organizationId },
+      where: {
+        email: { in: emails },
+        organizationId,
+        status: InviteStatus.PENDING,
+      },
+    });
+  }
+
+  findManyByOrg(
+    organizationId: string,
+    status?: InviteStatus,
+    take = 100,
+    skip = 0,
+  ): Promise<Invite[]> {
+    return this.prisma.invite.findMany({
+      where: { organizationId, ...(status ? { status } : {}) },
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
     });
   }
 

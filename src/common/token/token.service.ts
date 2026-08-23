@@ -6,12 +6,20 @@ import { EnvConfig } from '../config/env.validation';
 import { RefreshTokenRepository } from '../repositories/refresh-token.repository';
 import { generateOpaqueToken, hashToken } from '../utils/token.util';
 import { parseDurationToSeconds } from '../utils/duration.util';
-import { JwtPayload, TokenPair } from './jwt-payload.interface';
+import { JwtPayload, OrgClaim, TokenPair } from './jwt-payload.interface';
 
 export interface RefreshTokenMeta {
   userAgent?: string;
   ipAddress?: string;
 }
+
+export interface IssueTokenPairOptions {
+  org?: OrgClaim | null;
+  deviceId?: string | null;
+  meta?: RefreshTokenMeta;
+}
+
+type TokenUser = Pick<User, 'id' | 'platformRole'>;
 
 @Injectable()
 export class TokenService {
@@ -34,31 +42,43 @@ export class TokenService {
       1000;
   }
 
-  private signAccessToken(
-    user: Pick<User, 'id' | 'role' | 'organizationId' | 'isOrgOwner'>,
+  get accessTokenLifetimeSeconds(): number {
+    return this.accessTokenExpiresIn;
+  }
+
+  signAccessToken(
+    user: TokenUser,
+    org: OrgClaim | null,
+    deviceId: string | null,
   ): string {
     const payload: JwtPayload = {
       sub: user.id,
-      role: user.role,
-      organizationId: user.organizationId,
-      isOrgOwner: user.isOrgOwner,
+      platformRole: user.platformRole,
+      deviceId,
+      org,
     };
     return this.jwtService.sign(payload);
   }
 
   async issueTokenPair(
-    user: Pick<User, 'id' | 'role' | 'organizationId' | 'isOrgOwner'>,
-    meta: RefreshTokenMeta = {},
+    user: TokenUser,
+    options: IssueTokenPairOptions = {},
   ): Promise<TokenPair> {
-    const accessToken = this.signAccessToken(user);
+    const deviceId = options.deviceId ?? null;
+    const accessToken = this.signAccessToken(
+      user,
+      options.org ?? null,
+      deviceId,
+    );
     const rawRefreshToken = generateOpaqueToken();
 
     await this.refreshTokenRepository.create({
       userId: user.id,
+      deviceId,
       tokenHash: hashToken(rawRefreshToken),
       expiresAt: new Date(Date.now() + this.refreshTokenTtlMs),
-      userAgent: meta.userAgent,
-      ipAddress: meta.ipAddress,
+      userAgent: options.meta?.userAgent,
+      ipAddress: options.meta?.ipAddress,
     });
 
     return {
@@ -68,47 +88,72 @@ export class TokenService {
     };
   }
 
+  /**
+   * Rotation with reuse detection (ADR-0001). The organization claim is
+   * supplied by the caller, which has just re-read the membership, so a
+   * revoked membership cannot outlive one access-token lifetime.
+   */
   async rotateRefreshToken(
-    rawToken: string,
+    rawRefreshToken: string,
+    org: OrgClaim | null,
     meta: RefreshTokenMeta = {},
   ): Promise<TokenPair> {
-    const tokenHash = hashToken(rawToken);
-    const existing =
-      await this.refreshTokenRepository.findByTokenHashWithUser(tokenHash);
-
-    if (!existing || existing.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
+    const stored = await this.refreshTokenRepository.findByTokenHashWithUser(
+      hashToken(rawRefreshToken),
+    );
+    if (!stored) {
+      throw new UnauthorizedException('Invalid refresh token');
     }
 
-    if (existing.revokedAt) {
-      // Reuse of an already-rotated token: likely theft. Revoke every session for this user.
-      await this.revokeAllUserTokens(existing.userId);
+    // A token that was already rotated is being replayed: treat the whole
+    // session family as compromised.
+    if (stored.revokedAt) {
+      await this.refreshTokenRepository.revokeAllForUser(stored.userId);
       throw new UnauthorizedException(
         'Refresh token reuse detected; all sessions revoked',
       );
     }
 
-    const accessToken = this.signAccessToken(existing.user);
-    const rawNewRefreshToken = generateOpaqueToken();
-    const newTokenHash = hashToken(rawNewRefreshToken);
+    if (stored.expiresAt <= new Date()) {
+      throw new UnauthorizedException('Refresh token expired');
+    }
+    if (!stored.user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
+    }
 
-    await this.refreshTokenRepository.rotate(existing.id, newTokenHash, {
-      userId: existing.userId,
-      tokenHash: newTokenHash,
+    const nextRawToken = generateOpaqueToken();
+    const nextHash = hashToken(nextRawToken);
+    await this.refreshTokenRepository.rotate(stored.id, nextHash, {
+      userId: stored.userId,
+      deviceId: stored.deviceId,
+      tokenHash: nextHash,
       expiresAt: new Date(Date.now() + this.refreshTokenTtlMs),
       userAgent: meta.userAgent,
       ipAddress: meta.ipAddress,
     });
 
     return {
-      accessToken,
-      refreshToken: rawNewRefreshToken,
+      accessToken: this.signAccessToken(stored.user, org, stored.deviceId),
+      refreshToken: nextRawToken,
       accessTokenExpiresIn: this.accessTokenExpiresIn,
     };
   }
 
-  async revokeRefreshToken(rawToken: string): Promise<void> {
-    await this.refreshTokenRepository.revokeByTokenHash(hashToken(rawToken));
+  async peekUserIdAndOrg(
+    rawRefreshToken: string,
+  ): Promise<{ userId: string; platformRole: User['platformRole'] } | null> {
+    const stored = await this.refreshTokenRepository.findByTokenHashWithUser(
+      hashToken(rawRefreshToken),
+    );
+    return stored
+      ? { userId: stored.userId, platformRole: stored.user.platformRole }
+      : null;
+  }
+
+  async revokeRefreshToken(rawRefreshToken: string): Promise<void> {
+    await this.refreshTokenRepository.revokeByTokenHash(
+      hashToken(rawRefreshToken),
+    );
   }
 
   async revokeAllUserTokens(userId: string): Promise<void> {

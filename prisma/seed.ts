@@ -1,4 +1,4 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { PlatformRole, PrismaClient } from '@prisma/client';
 import { hashPassword } from '../src/common/utils/password.util';
 
 async function main() {
@@ -14,21 +14,28 @@ async function main() {
   const prisma = new PrismaClient();
   try {
     const passwordHash = await hashPassword(password);
+    // The superadmin holds no membership — tenancy lives on Membership now
+    // (ADR-0006) and platform authority lives on the user row.
     const superadmin = await prisma.user.upsert({
       where: { email },
       create: {
         email,
         passwordHash,
-        role: Role.SUPERADMIN,
-        organizationId: null,
+        platformRole: PlatformRole.SUPERADMIN,
+        singleDeviceEnforced: false,
       },
-      update: { passwordHash, role: Role.SUPERADMIN, organizationId: null },
+      update: {
+        passwordHash,
+        platformRole: PlatformRole.SUPERADMIN,
+        singleDeviceEnforced: false,
+      },
     });
     console.log(`Superadmin ready: ${superadmin.email}`);
   } finally {
     await prisma.$disconnect();
   }
 }
+
 main().catch((error: unknown) => {
   console.error(error);
   process.exit(1);

@@ -1,9 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { EnvConfig } from '../config/env.validation';
 import { TokenService } from './token.service';
+import { OrgClaimService } from './org-claim.service';
 
+@Global()
 @Module({
   imports: [
     JwtModule.registerAsync({
@@ -16,7 +18,7 @@ import { TokenService } from './token.service';
       inject: [ConfigService],
     }),
   ],
-  providers: [TokenService],
-  exports: [TokenService, JwtModule],
+  providers: [TokenService, OrgClaimService],
+  exports: [TokenService, OrgClaimService, JwtModule],
 })
 export class TokenModule {}

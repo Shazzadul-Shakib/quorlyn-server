@@ -5,21 +5,21 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role } from '@prisma/client';
+import { PlatformRole } from '@prisma/client';
 import type { Request } from 'express';
-import { ROLES_KEY } from '../decorators/roles.decorator';
+import { PLATFORM_ROLES_KEY } from '../decorators/platform-roles.decorator';
 import { AuthenticatedUser } from '../token/jwt-payload.interface';
 
 @Injectable()
-export class RolesGuard implements CanActivate {
+export class PlatformRolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (!requiredRoles || requiredRoles.length === 0) {
+    const required = this.reflector.getAllAndOverride<PlatformRole[]>(
+      PLATFORM_ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (!required || required.length === 0) {
       return true;
     }
 
@@ -27,8 +27,10 @@ export class RolesGuard implements CanActivate {
       .switchToHttp()
       .getRequest<Request & { user?: AuthenticatedUser }>();
     const user = request.user;
-    if (!user || !requiredRoles.includes(user.role)) {
-      throw new ForbiddenException('Insufficient role for this action');
+    if (!user || !required.includes(user.platformRole)) {
+      throw new ForbiddenException(
+        'Insufficient platform role for this action',
+      );
     }
     return true;
   }

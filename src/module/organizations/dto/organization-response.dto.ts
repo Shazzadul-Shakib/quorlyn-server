@@ -7,7 +7,7 @@ export class OrganizationResponseDto {
   @ApiProperty()
   name: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Public self-serve student join code' })
   joinCode: string;
 
   @ApiProperty()

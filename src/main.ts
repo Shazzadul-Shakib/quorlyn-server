@@ -25,13 +25,29 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Quorlyn API')
     .setDescription(
-      'Multi-tenant SaaS auth API — superadmin, organizations, teachers, students',
+      [
+        'Multi-tenant examination platform: organizations, teachers, students,',
+        'quizzes with mixed Bangla/English + LaTeX content, timed attempts,',
+        'leaderboards and dashboards.',
+        '',
+        'Auth: send `Authorization: Bearer <accessToken>`. Org-scoped routes',
+        'need an organization selected via POST /auth/organizations/{id}/select.',
+        'Device-locked accounts must also send the `X-Device-Id` header.',
+      ].join('\n'),
     )
-    .setVersion('1.0')
+    .setVersion('2.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'access-token',
     )
+    .addGlobalParameters({
+      name: 'X-Device-Id',
+      in: 'header',
+      required: false,
+      description:
+        'Stable client-generated device identifier (ADR-0017). Required for device-locked accounts.',
+      schema: { type: 'string' },
+    })
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, swaggerDocument);

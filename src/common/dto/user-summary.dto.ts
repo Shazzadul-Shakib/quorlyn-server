@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { PlatformRole } from '@prisma/client';
 
 export class UserSummaryDto {
   @ApiProperty()
@@ -8,12 +8,11 @@ export class UserSummaryDto {
   @ApiProperty()
   email: string;
 
-  @ApiProperty({ enum: Role })
-  role: Role;
+  @ApiProperty({ enum: PlatformRole })
+  platformRole: PlatformRole;
 
-  @ApiProperty({ nullable: true, type: String })
-  organizationId: string | null;
-
-  @ApiProperty()
-  isOrgOwner: boolean;
+  @ApiProperty({
+    description: 'Whether this account may hold only one active session',
+  })
+  singleDeviceEnforced: boolean;
 }
