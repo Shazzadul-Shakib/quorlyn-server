@@ -553,6 +553,11 @@ active owner cannot be demoted or suspended (409).
 | DELETE | `/quizzes/{id}/links/{linkId}` | Revoke |
 | GET | `/quizzes/{id}/leaderboard?page&limit` | Any member; students only if `leaderboardVisibleToStudents` |
 
+Every quiz response carries `createdByEmail` (resolved server-side from
+`createdById`) alongside the raw id — show it wherever quizzes from more than
+one teacher are listed together (the quiz list, an owner's view) so it's
+visible who authored what.
+
 Quiz timing fields, which are three different things
 ([ADR-0012](adr/0012-availability-window-and-attempt-policy.md)):
 
@@ -608,6 +613,11 @@ That is the landing page for a shared link: preview → sign in or register →
 what the class found hardest) and `submissionCauses` (how many attempts ended
 by timer, disconnect, violation). `/dashboard/student` spans **every**
 organization the student belongs to; group the output by `organizationName`.
+
+`/dashboard/organization` also returns `teacherStats`: one row per teacher
+membership (`teacherId`, `email`, `quizCount`, `publishedCount`,
+`totalAttempts`), sorted by `quizCount` descending — the owner-facing
+breakdown of which teacher is creating and publishing quizzes.
 
 Numbers move while an exam is running, because attempts settle as they are
 read. Label live figures as a snapshot rather than a final count.

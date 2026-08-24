@@ -9,7 +9,10 @@ import { PrismaService } from './prisma.service';
 export class PrismaTransactionRunner {
   constructor(private readonly prisma: PrismaService) {}
 
-  run<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-    return this.prisma.$transaction(work);
+  run<T>(
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { maxWait?: number; timeout?: number },
+  ): Promise<T> {
+    return this.prisma.$transaction(work, options);
   }
 }

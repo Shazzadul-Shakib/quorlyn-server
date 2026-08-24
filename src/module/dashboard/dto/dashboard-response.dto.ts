@@ -54,6 +54,14 @@ export class QuizDashboardDto {
   submissionCauses: SubmissionCauseCountDto[];
 }
 
+export class TeacherStatsDto {
+  @ApiProperty() teacherId: string;
+  @ApiProperty() email: string;
+  @ApiProperty() quizCount: number;
+  @ApiProperty() publishedCount: number;
+  @ApiProperty() totalAttempts: number;
+}
+
 export class OrganizationDashboardDto {
   @ApiProperty() organizationId: string;
   @ApiProperty() organizationName: string;
@@ -66,6 +74,11 @@ export class OrganizationDashboardDto {
   })
   attemptsInPeriod: number;
   @ApiProperty({ type: [QuizOverviewDto] }) recentQuizzes: QuizOverviewDto[];
+  @ApiProperty({
+    type: [TeacherStatsDto],
+    description: 'Per-teacher quiz authorship, sorted by quizCount desc',
+  })
+  teacherStats: TeacherStatsDto[];
 }
 
 export class StudentProgressEntryDto {
