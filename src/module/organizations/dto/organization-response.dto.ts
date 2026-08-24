@@ -18,4 +18,10 @@ export class OrganizationResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ description: 'Teacher memberships in this organization' })
+  teacherCount: number;
+
+  @ApiProperty({ description: 'Student memberships in this organization' })
+  studentCount: number;
 }
