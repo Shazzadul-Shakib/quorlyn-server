@@ -5,6 +5,7 @@ export class QuizResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() organizationId: string;
   @ApiProperty() createdById: string;
+  @ApiProperty() createdByEmail: string;
   @ApiProperty() title: string;
   @ApiPropertyOptional({ type: String, nullable: true }) description:
     string | null;

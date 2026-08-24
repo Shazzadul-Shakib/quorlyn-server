@@ -4,8 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Quiz, QuizStatus, SubmissionCause } from '@prisma/client';
-import { QuizRepository } from '../../common/repositories/quiz.repository';
+import { QuizStatus, SubmissionCause } from '@prisma/client';
+import {
+  QuizRepository,
+  type QuizWithCreator,
+} from '../../common/repositories/quiz.repository';
 import { QuestionRepository } from '../../common/repositories/question.repository';
 import { AttemptRepository } from '../../common/repositories/attempt.repository';
 import { PrismaTransactionRunner } from '../../common/prisma/transaction-runner';
@@ -188,6 +191,13 @@ export class QuizzesService {
   /**
    * The supported way to "edit" a published quiz (ADR-0010): a deep copy in
    * DRAFT, leaving the original and its results untouched.
+   *
+   * One question per round trip adds up under real network latency to the
+   * database (observed: a 2-question duplicate taking ~9s against Neon), so
+   * the inserts run concurrently on the same transaction connection instead
+   * of a sequential `for` loop, and the transaction gets a longer timeout
+   * than Prisma's 5s interactive-transaction default so a slow-but-alive
+   * connection doesn't get treated as stuck and aborted mid-copy.
    */
   async duplicate(
     id: string,
@@ -197,53 +207,61 @@ export class QuizzesService {
     const source = await this.requireQuiz(id, organizationId);
     const questions = await this.questionRepository.findManyWithAnswerKey(id);
 
-    const copy = await this.transactionRunner.run(async (tx) => {
-      const quiz = await this.quizRepository.create(
-        {
-          organizationId,
-          createdById,
-          title: `${source.title} (copy)`,
-          description: source.description ?? undefined,
-          language: source.language,
-          subject: source.subject ?? undefined,
-          durationSeconds: source.durationSeconds,
-          opensAt: source.opensAt,
-          closesAt: source.closesAt,
-          maxAttempts: source.maxAttempts,
-          scoringPolicy: source.scoringPolicy,
-          lateStartCutoff: source.lateStartCutoff,
-          shuffleQuestions: source.shuffleQuestions,
-          maxFocusViolations: source.maxFocusViolations,
-          leaderboardVisibleToStudents: source.leaderboardVisibleToStudents,
-        },
-        tx,
-      );
-
-      for (const question of questions) {
-        await this.questionRepository.create(
+    const copy = await this.transactionRunner.run(
+      async (tx) => {
+        const quiz = await this.quizRepository.create(
           {
-            quizId: quiz.id,
-            type: question.type,
-            prompt: question.prompt,
-            contentFormat: question.contentFormat,
-            points: question.points,
-            position: question.position,
-            options: question.options.map((option) => ({
-              text: option.text,
-              isCorrect: option.isCorrect,
-            })),
+            organizationId,
+            createdById,
+            title: `${source.title} (copy)`,
+            description: source.description ?? undefined,
+            language: source.language,
+            subject: source.subject ?? undefined,
+            durationSeconds: source.durationSeconds,
+            opensAt: source.opensAt,
+            closesAt: source.closesAt,
+            maxAttempts: source.maxAttempts,
+            scoringPolicy: source.scoringPolicy,
+            lateStartCutoff: source.lateStartCutoff,
+            shuffleQuestions: source.shuffleQuestions,
+            maxFocusViolations: source.maxFocusViolations,
+            leaderboardVisibleToStudents: source.leaderboardVisibleToStudents,
           },
           tx,
         );
-      }
-      await this.quizRepository.recalculateTotalPoints(quiz.id, tx);
-      return quiz;
-    });
+
+        await Promise.all(
+          questions.map((question) =>
+            this.questionRepository.create(
+              {
+                quizId: quiz.id,
+                type: question.type,
+                prompt: question.prompt,
+                contentFormat: question.contentFormat,
+                points: question.points,
+                position: question.position,
+                options: question.options.map((option) => ({
+                  text: option.text,
+                  isCorrect: option.isCorrect,
+                })),
+              },
+              tx,
+            ),
+          ),
+        );
+        await this.quizRepository.recalculateTotalPoints(quiz.id, tx);
+        return quiz;
+      },
+      { timeout: 15_000 },
+    );
 
     return toQuizResponse(copy, questions.length);
   }
 
-  async requireQuiz(id: string, organizationId: string): Promise<Quiz> {
+  async requireQuiz(
+    id: string,
+    organizationId: string,
+  ): Promise<QuizWithCreator> {
     const quiz = await this.quizRepository.findByIdInOrg(id, organizationId);
     if (!quiz) {
       throw new NotFoundException('Quiz not found');

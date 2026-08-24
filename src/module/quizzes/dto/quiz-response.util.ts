@@ -1,14 +1,15 @@
-import { Quiz } from '@prisma/client';
+import type { QuizWithCreator } from '../../../common/repositories/quiz.repository';
 import { QuizResponseDto } from './quiz-response.dto';
 
 export function toQuizResponse(
-  quiz: Quiz,
+  quiz: QuizWithCreator,
   questionCount: number,
 ): QuizResponseDto {
   return {
     id: quiz.id,
     organizationId: quiz.organizationId,
     createdById: quiz.createdById,
+    createdByEmail: quiz.createdBy.email,
     title: quiz.title,
     description: quiz.description,
     language: quiz.language,

@@ -14,11 +14,13 @@ import {
   QuizOverviewDto,
   StudentDashboardDto,
   TeacherDashboardDto,
+  TeacherStatsDto,
 } from './dto/dashboard-response.dto';
 import { DEFAULT_PERIOD_DAYS, PeriodQueryDto } from './dto/period.query.dto';
 
 const RECENT_QUIZ_LIMIT = 10;
 const TEACHER_QUIZ_LIMIT = 50;
+const TEACHER_STATS_LIMIT = 200;
 
 /**
  * Every figure is aggregated on read (ADR-0019). No counters are maintained
@@ -131,33 +133,76 @@ export class DashboardService {
     }
 
     const { from, to } = this.resolvePeriod(period);
-    const [teachers, students, quizCount, publishedCount, attemptsInPeriod] =
-      await Promise.all([
-        this.membershipRepository.countByOrg(organizationId, OrgRole.TEACHER),
-        this.membershipRepository.countByOrg(organizationId, OrgRole.STUDENT),
-        this.quizRepository.count({ organizationId }),
-        this.quizRepository.count({
-          organizationId,
-          status: QuizStatus.PUBLISHED,
-        }),
-        this.attemptRepository.countSubmittedInPeriod(organizationId, from, to),
-      ]);
+    const [
+      teacherMemberships,
+      students,
+      quizCount,
+      publishedCount,
+      attemptsInPeriod,
+    ] = await Promise.all([
+      this.membershipRepository.findManyByOrgWithUser(
+        organizationId,
+        OrgRole.TEACHER,
+        TEACHER_STATS_LIMIT,
+      ),
+      this.membershipRepository.countByOrg(organizationId, OrgRole.STUDENT),
+      this.quizRepository.count({ organizationId }),
+      this.quizRepository.count({
+        organizationId,
+        status: QuizStatus.PUBLISHED,
+      }),
+      this.attemptRepository.countSubmittedInPeriod(organizationId, from, to),
+    ]);
 
-    const recent = await this.quizRepository.findMany({
-      organizationId,
-      take: RECENT_QUIZ_LIMIT,
-    });
+    const [recent, teacherStats] = await Promise.all([
+      this.quizRepository.findMany({
+        organizationId,
+        take: RECENT_QUIZ_LIMIT,
+      }),
+      this.teacherStatsFor(organizationId, teacherMemberships),
+    ]);
 
     return {
       organizationId,
       organizationName: organization.name,
-      teacherCount: teachers,
+      teacherCount: teacherMemberships.length,
       studentCount: students,
       quizCount,
       publishedQuizCount: publishedCount,
       attemptsInPeriod,
       recentQuizzes: await this.overviewsFor(recent),
+      teacherStats,
     };
+  }
+
+  /**
+   * "Which teacher creates how many quizzes" for the owner's dashboard.
+   * Reuses `forTeacher` per teacher rather than a new aggregate query — a
+   * handful of memberships per organization, so the fan-out stays cheap and
+   * the two views (a teacher's own dashboard vs. their row here) can never
+   * disagree about what "their quizzes" counts.
+   */
+  private async teacherStatsFor(
+    organizationId: string,
+    teachers: { userId: string; user: { email: string } }[],
+  ): Promise<TeacherStatsDto[]> {
+    const stats = await Promise.all(
+      teachers.map(async (teacher) => {
+        const dashboard = await this.forTeacher(
+          organizationId,
+          teacher.userId,
+          true,
+        );
+        return {
+          teacherId: teacher.userId,
+          email: teacher.user.email,
+          quizCount: dashboard.quizCount,
+          publishedCount: dashboard.publishedCount,
+          totalAttempts: dashboard.totalAttempts,
+        };
+      }),
+    );
+    return stats.sort((a, b) => b.quizCount - a.quizCount);
   }
 
   /**

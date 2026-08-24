@@ -63,7 +63,8 @@ export class AttemptsController {
   ): Promise<AttemptResponseDto> {
     return this.attemptsService.start(
       quizId,
-      org.id,
+      org,
+      currentUser.platformRole,
       attemptContext(currentUser, req, deviceId),
     );
   }
@@ -81,6 +82,7 @@ export class AttemptsController {
   ): Promise<AttemptResponseDto> {
     return this.attemptsService.startFromLink(
       token,
+      currentUser.platformRole,
       attemptContext(currentUser, req, deviceId),
     );
   }

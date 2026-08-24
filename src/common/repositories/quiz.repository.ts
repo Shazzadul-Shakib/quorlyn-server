@@ -5,8 +5,15 @@ import {
   Quiz,
   QuizStatus,
   ScoringPolicy,
+  User,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+export type QuizWithCreator = Quiz & { createdBy: Pick<User, 'email'> };
+
+const CREATOR_INCLUDE = {
+  createdBy: { select: { email: true } },
+} as const;
 
 export interface CreateQuizInput {
   organizationId: string;
@@ -45,21 +52,31 @@ export class QuizRepository {
   create(
     data: CreateQuizInput,
     tx: Prisma.TransactionClient = this.prisma,
-  ): Promise<Quiz> {
-    return tx.quiz.create({ data });
+  ): Promise<QuizWithCreator> {
+    return tx.quiz.create({ data, include: CREATOR_INCLUDE });
   }
 
-  findById(id: string): Promise<Quiz | null> {
-    return this.prisma.quiz.findUnique({ where: { id } });
+  findById(id: string): Promise<QuizWithCreator | null> {
+    return this.prisma.quiz.findUnique({
+      where: { id },
+      include: CREATOR_INCLUDE,
+    });
   }
 
-  findByIdInOrg(id: string, organizationId: string): Promise<Quiz | null> {
-    return this.prisma.quiz.findFirst({ where: { id, organizationId } });
+  findByIdInOrg(
+    id: string,
+    organizationId: string,
+  ): Promise<QuizWithCreator | null> {
+    return this.prisma.quiz.findFirst({
+      where: { id, organizationId },
+      include: CREATOR_INCLUDE,
+    });
   }
 
-  findMany(filter: ListQuizzesFilter): Promise<Quiz[]> {
+  findMany(filter: ListQuizzesFilter): Promise<QuizWithCreator[]> {
     return this.prisma.quiz.findMany({
       where: this.toWhere(filter),
+      include: CREATOR_INCLUDE,
       orderBy: { createdAt: 'desc' },
       take: filter.take ?? 50,
       skip: filter.skip ?? 0,
@@ -74,8 +91,8 @@ export class QuizRepository {
     id: string,
     data: UpdateQuizInput,
     tx: Prisma.TransactionClient = this.prisma,
-  ): Promise<Quiz> {
-    return tx.quiz.update({ where: { id }, data });
+  ): Promise<QuizWithCreator> {
+    return tx.quiz.update({ where: { id }, data, include: CREATOR_INCLUDE });
   }
 
   /**
@@ -89,7 +106,7 @@ export class QuizRepository {
     to: QuizStatus,
     stamps: { publishedAt?: Date; closedAt?: Date } = {},
     tx: Prisma.TransactionClient = this.prisma,
-  ): Promise<Quiz | null> {
+  ): Promise<QuizWithCreator | null> {
     const { count } = await tx.quiz.updateMany({
       where: { id, status: { in: from } },
       data: { status: to, ...stamps },
@@ -97,7 +114,7 @@ export class QuizRepository {
     if (count === 0) {
       return null;
     }
-    return tx.quiz.findUnique({ where: { id } });
+    return tx.quiz.findUnique({ where: { id }, include: CREATOR_INCLUDE });
   }
 
   async recalculateTotalPoints(

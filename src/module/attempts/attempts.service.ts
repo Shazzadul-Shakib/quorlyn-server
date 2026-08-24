@@ -11,11 +11,13 @@ import {
   AttemptStatus,
   MembershipStatus,
   OrgRole,
+  PlatformRole,
   ProctorEventType,
   Quiz,
   QuizStatus,
   SubmissionCause,
 } from '@prisma/client';
+import type { OrgClaim } from '../../common/token/jwt-payload.interface';
 import { AttemptRepository } from '../../common/repositories/attempt.repository';
 import { AttemptAnswerRepository } from '../../common/repositories/attempt-answer.repository';
 import { QuestionRepository } from '../../common/repositories/question.repository';
@@ -75,16 +77,19 @@ export class AttemptsService {
    */
   async start(
     quizId: string,
-    organizationId: string,
+    org: OrgClaim,
+    platformRole: PlatformRole,
     context: AttemptContext,
   ): Promise<AttemptResponseDto> {
-    const quiz = await this.requireQuizInOrg(quizId, organizationId);
+    this.assertStudentEligible(platformRole, org);
+    const quiz = await this.requireQuizInOrg(quizId, org.id);
     return this.startForQuiz(quiz, context, null);
   }
 
   /** Link entry point: resolves the link, enrols the student, then starts. */
   async startFromLink(
     rawToken: string,
+    platformRole: PlatformRole,
     context: AttemptContext,
   ): Promise<AttemptResponseDto> {
     const link = await this.quizLinkRepository.findByTokenHashWithQuiz(
@@ -111,11 +116,7 @@ export class AttemptsService {
         'Your membership of this organization is suspended',
       );
     }
-    if (membership && membership.role === OrgRole.TEACHER) {
-      throw new ForbiddenException(
-        'Teachers preview a quiz from the dashboard rather than sitting it',
-      );
-    }
+    this.assertStudentEligible(platformRole, membership);
 
     // A student already enrolled through this link keeps their access even
     // once maxUses is reached — otherwise a reconnect locks them out.
@@ -460,6 +461,30 @@ export class AttemptsService {
           : undefined,
       })),
     );
+  }
+
+  /**
+   * Sitting an exam is a student-only action. Teachers preview a quiz from
+   * the dashboard instead of sitting it, org owners run the organization
+   * rather than take its quizzes, and the superadmin sits outside every
+   * organization by design (ADR-0002) — none of them should be able to
+   * consume an attempt slot or appear in a class's results.
+   */
+  private assertStudentEligible(
+    platformRole: PlatformRole,
+    membership: { role: OrgRole; isOrgOwner: boolean } | null,
+  ): void {
+    if (platformRole === PlatformRole.SUPERADMIN) {
+      throw new ForbiddenException('Superadmins cannot sit an exam');
+    }
+    if (membership?.isOrgOwner) {
+      throw new ForbiddenException('Organization owners cannot sit an exam');
+    }
+    if (membership?.role === OrgRole.TEACHER) {
+      throw new ForbiddenException(
+        'Teachers preview a quiz from the dashboard rather than sitting it',
+      );
+    }
   }
 
   private assertOpenForAnswers(attempt: Attempt, quiz: Quiz): void {
