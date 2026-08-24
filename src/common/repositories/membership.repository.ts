@@ -141,4 +141,42 @@ export class MembershipRepository {
     });
     return rows.map((row) => ({ role: row.role, count: row._count._all }));
   }
+
+  /**
+   * Teacher/student counts for several organizations in one query, keyed by
+   * organizationId — for a list page, where counting each row individually
+   * would be one query per organization per role. Mirrors the (unfiltered
+   * by status) semantics `countByOrg` already uses for a single
+   * organization's own dashboard, so the two never disagree.
+   */
+  async countByRoleForOrgs(
+    organizationIds: string[],
+  ): Promise<Map<string, { teacherCount: number; studentCount: number }>> {
+    const result = new Map<
+      string,
+      { teacherCount: number; studentCount: number }
+    >();
+    for (const id of organizationIds) {
+      result.set(id, { teacherCount: 0, studentCount: 0 });
+    }
+    if (organizationIds.length === 0) {
+      return result;
+    }
+
+    const rows = await this.prisma.membership.groupBy({
+      by: ['organizationId', 'role'],
+      where: { organizationId: { in: organizationIds } },
+      _count: { _all: true },
+    });
+    for (const row of rows) {
+      const entry = result.get(row.organizationId);
+      if (!entry) continue;
+      if (row.role === OrgRole.TEACHER) {
+        entry.teacherCount = row._count._all;
+      } else {
+        entry.studentCount = row._count._all;
+      }
+    }
+    return result;
+  }
 }

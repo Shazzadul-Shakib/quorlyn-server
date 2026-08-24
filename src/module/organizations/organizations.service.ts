@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Organization, OrgRole, PlatformRole } from '@prisma/client';
 import { OrganizationRepository } from '../../common/repositories/organization.repository';
+import { MembershipRepository } from '../../common/repositories/membership.repository';
 import { InviteRepository } from '../../common/repositories/invite.repository';
 import { UniqueConstraintViolationError } from '../../common/repositories/errors';
 import { PrismaTransactionRunner } from '../../common/prisma/transaction-runner';
@@ -31,6 +32,7 @@ export class OrganizationsService {
 
   constructor(
     private readonly organizationRepository: OrganizationRepository,
+    private readonly membershipRepository: MembershipRepository,
     private readonly inviteRepository: InviteRepository,
     private readonly transactionRunner: PrismaTransactionRunner,
     @Inject(MAILER) private readonly mailer: MailerService,
@@ -99,7 +101,10 @@ export class OrganizationsService {
       );
     }
 
-    return toOrganizationResponse(organization);
+    return toOrganizationResponse(
+      organization,
+      await this.countsFor(organization.id),
+    );
   }
 
   async list(
@@ -110,7 +115,18 @@ export class OrganizationsService {
       this.organizationRepository.findAll(take, skip),
       this.organizationRepository.count(),
     ]);
-    return { items: organizations.map(toOrganizationResponse), total };
+    const counts = await this.membershipRepository.countByRoleForOrgs(
+      organizations.map((organization) => organization.id),
+    );
+    return {
+      items: organizations.map((organization) =>
+        toOrganizationResponse(
+          organization,
+          counts.get(organization.id) ?? { teacherCount: 0, studentCount: 0 },
+        ),
+      ),
+      total,
+    };
   }
 
   async findById(
@@ -123,7 +139,8 @@ export class OrganizationsService {
     ) {
       throw new ForbiddenException('Cannot access another organization');
     }
-    return toOrganizationResponse(await this.requireOrganization(id));
+    const organization = await this.requireOrganization(id);
+    return toOrganizationResponse(organization, await this.countsFor(id));
   }
 
   async update(
@@ -134,7 +151,7 @@ export class OrganizationsService {
     const organization = await this.organizationRepository.update(id, {
       name: dto.name,
     });
-    return toOrganizationResponse(organization);
+    return toOrganizationResponse(organization, await this.countsFor(id));
   }
 
   /**
@@ -151,7 +168,7 @@ export class OrganizationsService {
       id,
       isActive,
     );
-    return toOrganizationResponse(organization);
+    return toOrganizationResponse(organization, await this.countsFor(id));
   }
 
   /** Invalidates a leaked join code without disturbing existing members. */
@@ -163,7 +180,7 @@ export class OrganizationsService {
           id,
           generateJoinCode(),
         );
-        return toOrganizationResponse(organization);
+        return toOrganizationResponse(organization, await this.countsFor(id));
       } catch (error) {
         if (
           error instanceof UniqueConstraintViolationError &&
@@ -176,6 +193,17 @@ export class OrganizationsService {
       }
     }
     throw new ConflictException('Could not allocate a unique join code');
+  }
+
+  /** Mirrors the (status-unfiltered) counting `forOrganization` already uses for this org's own dashboard. */
+  private async countsFor(
+    organizationId: string,
+  ): Promise<{ teacherCount: number; studentCount: number }> {
+    const [teacherCount, studentCount] = await Promise.all([
+      this.membershipRepository.countByOrg(organizationId, OrgRole.TEACHER),
+      this.membershipRepository.countByOrg(organizationId, OrgRole.STUDENT),
+    ]);
+    return { teacherCount, studentCount };
   }
 
   private async requireOrganization(id: string): Promise<Organization> {

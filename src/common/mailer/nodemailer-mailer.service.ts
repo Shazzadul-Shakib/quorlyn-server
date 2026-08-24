@@ -41,7 +41,12 @@ export class NodemailerMailerService implements MailerService {
   }
 
   async sendInviteEmail(params: SendInviteEmailParams): Promise<void> {
-    const acceptUrl = `${this.frontendUrl}/invites/${params.inviteToken}`;
+    // Must match the frontend's actual accept-invite page, `/invite/[token]`
+    // (singular — the app router directory, not the `/invites` API
+    // collection this token also happens to belong to). A mismatch here
+    // sends a real invitee to a 404 or an unrelated public route instead of
+    // the accept-invite flow.
+    const acceptUrl = `${this.frontendUrl}/invite/${params.inviteToken}`;
     const roleLabel = ROLE_LABEL[params.role];
     const ownerNote = params.isOrgOwner ? ' as the organization owner' : '';
 
