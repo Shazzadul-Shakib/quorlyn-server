@@ -287,13 +287,13 @@ export class QuizzesController {
   @Delete(':id/links/:linkId')
   @RequirePermissions(Permission.MANAGE_QUIZZES)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Revoke a link without affecting the quiz' })
-  async revokeLink(
+  @ApiOperation({ summary: 'Delete a link without affecting the quiz' })
+  async deleteLink(
     @Param('id') id: string,
     @Param('linkId') linkId: string,
     @CurrentOrg() org: OrgClaim,
   ): Promise<void> {
-    await this.quizLinksService.revoke(id, linkId, org.id);
+    await this.quizLinksService.remove(id, linkId, org.id);
   }
 
   // ------------------------------------------------------- leaderboard

@@ -96,13 +96,12 @@ export class AttemptsService {
       hashToken(rawToken),
     );
     if (!link) {
+      // A deleted link (formerly "revoked") isn't distinguishable from one
+      // that never existed — the row is simply gone.
       throw new NotFoundException('Link not found');
     }
 
     const now = this.clock.now();
-    if (link.revokedAt) {
-      throw new GoneException('This link has been revoked');
-    }
     if (link.expiresAt && link.expiresAt <= now) {
       throw new GoneException('This link has expired');
     }

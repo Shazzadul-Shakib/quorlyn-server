@@ -7,8 +7,12 @@ export class QuizLinkResponseDto {
   @ApiPropertyOptional({ type: Date, nullable: true }) expiresAt: Date | null;
   @ApiPropertyOptional({ type: Number, nullable: true }) maxUses: number | null;
   @ApiProperty() usedCount: number;
-  @ApiPropertyOptional({ type: Date, nullable: true }) revokedAt: Date | null;
   @ApiProperty() createdAt: Date;
+  @ApiProperty({
+    description:
+      "Whether a new attempt could start through this link right now — folds in the quiz's own status/opensAt/closesAt, not just this link's own expiresAt/maxUses.",
+  })
+  acceptingAttempts: boolean;
 
   @ApiPropertyOptional({
     type: String,
