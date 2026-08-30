@@ -26,6 +26,7 @@ import { HeartbeatResponseDto } from './dto/heartbeat-response.dto';
 import { SaveAnswerDto } from './dto/save-answer.dto';
 import { ReportEventsDto } from './dto/report-events.dto';
 import { AttemptDetailResponseDto } from './dto/attempt-detail-response.dto';
+import { AttemptReviewResponseDto } from './dto/attempt-review-response.dto';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { RequireOrg } from '../../common/decorators/require-org.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -113,6 +114,20 @@ export class AttemptsController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<ExamStateResponseDto> {
     return this.attemptsService.examState(id, currentUser.sub);
+  }
+
+  @Get('attempts/:id/review')
+  @ApiOperation({
+    summary:
+      "The student's own attempt with the answer key — available once the quiz has closed",
+  })
+  @ApiResponse({ status: 200, type: AttemptReviewResponseDto })
+  @ApiResponse({ status: 403, description: 'The quiz has not closed yet' })
+  review(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<AttemptReviewResponseDto> {
+    return this.attemptsService.reviewOwnAttempt(id, currentUser.sub);
   }
 
   @Put('attempts/:id/answers/:questionId')

@@ -33,12 +33,16 @@ import { AttemptFinalizerService } from '../../common/exam/attempt-finalizer.ser
 import { CLOCK, type Clock } from '../../common/clock/clock';
 import { seededShuffle } from '../../common/utils/shuffle.util';
 import { hashToken } from '../../common/utils/token.util';
-import { toExamQuestion } from '../quizzes/dto/question-response.util';
+import {
+  toAnswerKeyQuestion,
+  toExamQuestion,
+} from '../quizzes/dto/question-response.util';
 import { AttemptResponseDto } from './dto/attempt-response.dto';
 import { ExamStateResponseDto } from './dto/exam-state-response.dto';
 import { HeartbeatResponseDto } from './dto/heartbeat-response.dto';
 import { ReportEventsDto } from './dto/report-events.dto';
 import { AttemptDetailResponseDto } from './dto/attempt-detail-response.dto';
+import { AttemptReviewResponseDto } from './dto/attempt-review-response.dto';
 
 export interface AttemptContext {
   userId: string;
@@ -236,6 +240,53 @@ export class AttemptsService {
       answers: answers.map((answer) => ({
         questionId: answer.questionId,
         selectedOptionIds: answer.selectedOptionIds,
+      })),
+    };
+  }
+
+  /**
+   * The student's own answer key, once the quiz is over. Deliberately time-
+   * gated rather than role-gated (ADR-0011's boundary was about *role*, and
+   * a student reading their own now-closed attempt was explicitly flagged
+   * there as a plausible future feature, not a violation of it).
+   */
+  async reviewOwnAttempt(
+    attemptId: string,
+    userId: string,
+  ): Promise<AttemptReviewResponseDto> {
+    const { attempt, quiz } = await this.requireOwnAttempt(attemptId, userId);
+    const { attempt: settled } = await this.finalizer.finalizeIfDue(
+      attempt,
+      quiz,
+    );
+    if (settled.status !== AttemptStatus.SUBMITTED) {
+      throw new ConflictException('This attempt has not been submitted yet');
+    }
+
+    const now = this.clock.now();
+    const quizIsOver =
+      quiz.status === QuizStatus.CLOSED ||
+      quiz.status === QuizStatus.ARCHIVED ||
+      (quiz.closesAt !== null && quiz.closesAt <= now);
+    if (!quizIsOver) {
+      throw new ForbiddenException(
+        'The answer key is available once this quiz closes',
+      );
+    }
+
+    const [questions, answers] = await Promise.all([
+      this.questionRepository.findManyWithAnswerKey(quiz.id),
+      this.attemptAnswerRepository.findManyByAttempt(attemptId),
+    ]);
+
+    return {
+      attempt: this.toAttemptResponse(settled, quiz),
+      questions: questions.map(toAnswerKeyQuestion),
+      answers: answers.map((answer) => ({
+        questionId: answer.questionId,
+        selectedOptionIds: answer.selectedOptionIds,
+        isCorrect: answer.isCorrect,
+        pointsAwarded: answer.pointsAwarded,
       })),
     };
   }
