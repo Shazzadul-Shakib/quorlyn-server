@@ -1,6 +1,11 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { QuizLink, QuizStatus } from '@prisma/client';
+import { Quiz, QuizLink, QuizStatus } from '@prisma/client';
 import { QuizLinkRepository } from '../../common/repositories/quiz-link.repository';
 import { OrganizationRepository } from '../../common/repositories/organization.repository';
 import { QuestionRepository } from '../../common/repositories/question.repository';
@@ -30,6 +35,14 @@ export class QuizLinksService {
   /**
    * The raw token is returned exactly once — only its sha256 is stored, like
    * every other token in this system (ADR-0013).
+   *
+   * Only one active link per quiz at a time: sharing several live links for
+   * the same quiz made it unclear which one was "the" link and left stale
+   * ones nobody remembered to remove. A teacher deletes (or waits out the
+   * expiry of) the current one before minting another. "Active" here is the
+   * same full `acceptingAttempts` check as everywhere else — in practice
+   * nobody sets a link's own `expiresAt`, they rely on the quiz's `closesAt`,
+   * so this must fold in the quiz's own window or it would never re-open.
    */
   async create(
     quizId: string,
@@ -37,7 +50,14 @@ export class QuizLinksService {
     createdById: string,
     dto: CreateQuizLinkDto,
   ): Promise<QuizLinkResponseDto> {
-    await this.quizzesService.requireQuiz(quizId, organizationId);
+    const quiz = await this.quizzesService.requireQuiz(quizId, organizationId);
+    const now = this.clock.now();
+    const existing = await this.quizLinkRepository.findManyByQuiz(quizId);
+    if (existing.some((link) => this.acceptingAttempts(link, quiz, now))) {
+      throw new ConflictException(
+        'This quiz already has an active link — delete it or wait for it to expire before creating another.',
+      );
+    }
     const rawToken = generateOpaqueToken();
     const link = await this.quizLinkRepository.create({
       quizId,
@@ -47,29 +67,36 @@ export class QuizLinksService {
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       maxUses: dto.maxUses ?? null,
     });
-    return this.toResponse(link, rawToken);
+    return this.toResponse(
+      link,
+      rawToken,
+      this.acceptingAttempts(link, quiz, now),
+    );
   }
 
   async list(
     quizId: string,
     organizationId: string,
   ): Promise<QuizLinkResponseDto[]> {
-    await this.quizzesService.requireQuiz(quizId, organizationId);
+    const quiz = await this.quizzesService.requireQuiz(quizId, organizationId);
+    const now = this.clock.now();
     const links = await this.quizLinkRepository.findManyByQuiz(quizId);
-    return links.map((link) => this.toResponse(link, null));
+    return links.map((link) =>
+      this.toResponse(link, null, this.acceptingAttempts(link, quiz, now)),
+    );
   }
 
-  async revoke(
+  /** A hard delete (ADR-0013 amendment, 2026-08-30) — see `QuizLinkRepository.remove`. */
+  async remove(
     quizId: string,
     linkId: string,
     organizationId: string,
   ): Promise<void> {
     await this.quizzesService.requireQuiz(quizId, organizationId);
-    const link = await this.quizLinkRepository.findByIdInQuiz(linkId, quizId);
-    if (!link) {
+    const removed = await this.quizLinkRepository.remove(linkId, quizId);
+    if (!removed) {
       throw new NotFoundException('Link not found');
     }
-    await this.quizLinkRepository.revoke(linkId, this.clock.now());
   }
 
   /** Public: enough to decide whether to sign in, and nothing more. */
@@ -90,13 +117,7 @@ export class QuizLinksService {
     }
 
     const now = this.clock.now();
-    const acceptingAttempts =
-      link.revokedAt === null &&
-      (link.expiresAt === null || link.expiresAt > now) &&
-      (link.maxUses === null || link.usedCount < link.maxUses) &&
-      link.quiz.status === QuizStatus.PUBLISHED &&
-      (link.quiz.opensAt === null || link.quiz.opensAt <= now) &&
-      (link.quiz.closesAt === null || link.quiz.closesAt > now);
+    const acceptingAttempts = this.acceptingAttempts(link, link.quiz, now);
 
     return {
       quizTitle: link.quiz.title,
@@ -114,9 +135,29 @@ export class QuizLinksService {
     };
   }
 
+  /**
+   * Whether a new attempt could start through this link *right now* — the
+   * one true definition of "active" for a link, used for the one-active-
+   * link-at-a-time check, the list view's status, and the public preview.
+   * Deliberately folds in the *quiz's* own window and status, not just the
+   * link's own `expiresAt`/`maxUses`: a link with no `expiresAt` of its own
+   * (the common case — teachers rely on the quiz's `closesAt` instead) would
+   * otherwise look permanently active even after the quiz itself closed.
+   */
+  private acceptingAttempts(link: QuizLink, quiz: Quiz, now: Date): boolean {
+    return (
+      (link.expiresAt === null || link.expiresAt > now) &&
+      (link.maxUses === null || link.usedCount < link.maxUses) &&
+      quiz.status === QuizStatus.PUBLISHED &&
+      (quiz.opensAt === null || quiz.opensAt <= now) &&
+      (quiz.closesAt === null || quiz.closesAt > now)
+    );
+  }
+
   private toResponse(
     link: QuizLink,
     rawToken: string | null,
+    acceptingAttempts: boolean,
   ): QuizLinkResponseDto {
     return {
       id: link.id,
@@ -125,8 +166,8 @@ export class QuizLinksService {
       expiresAt: link.expiresAt,
       maxUses: link.maxUses,
       usedCount: link.usedCount,
-      revokedAt: link.revokedAt,
       createdAt: link.createdAt,
+      acceptingAttempts,
       token: rawToken,
       url: rawToken ? `${this.frontendUrl}/exam/${rawToken}` : null,
     };

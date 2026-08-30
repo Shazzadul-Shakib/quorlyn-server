@@ -4,6 +4,7 @@ import { QuizLinksController } from './quiz-links.controller';
 import { QuizzesService } from './quizzes.service';
 import { QuestionsService } from './questions.service';
 import { QuizLinksService } from './quiz-links.service';
+import { QuizClosingSweeperService } from './quiz-closing-sweeper.service';
 import { LeaderboardService } from './leaderboard.service';
 
 @Module({
@@ -12,6 +13,7 @@ import { LeaderboardService } from './leaderboard.service';
     QuizzesService,
     QuestionsService,
     QuizLinksService,
+    QuizClosingSweeperService,
     LeaderboardService,
   ],
   exports: [QuizzesService],

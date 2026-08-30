@@ -111,3 +111,46 @@ gets a preview, not an attempt.
 - Link tokens are secrets and get the same treatment as every other token
   here: generated with `generateOpaqueToken`, stored as `sha256`, returned to
   the teacher exactly once at creation, and never logged.
+
+## Amendment (2026-08-30)
+
+Three changes on top of the original decision, driven by real confusion over
+having several simultaneous links for one quiz with no clear "the" link:
+
+- **One active link per quiz at a time.** "Active" — now formalized as
+  `acceptingAttempts` (below) — governs this: `POST /quiz-links` 409s if an
+  active one already exists; a teacher removes (or outlasts the expiry of)
+  the current one before minting another.
+- **`revokedAt` is gone; revoking is now a hard delete.** The soft-revoke
+  update is replaced by `QuizLinkRepository.remove()` (`DELETE`), safe even
+  against a link with attempts already against it — `Attempt.quizLinkId` is
+  `onDelete: SetNull`, so those attempts just lose the back-reference, they
+  don't cascade away. The lazy check at start time (`startFromLink`) no
+  longer distinguishes "revoked" from "never existed" — a deleted link 404s
+  like any other unknown token, rather than 410-ing with a specific message.
+- **A quiz auto-closes once its own `closesAt` passes** (`PUBLISHED` →
+  `CLOSED`, finalizing in-flight attempts exactly like a manual close). This
+  runs on a 30-second `@Cron` sweep (`QuizClosingSweeperService`), mirroring
+  the existing attempt-finalization sweeper and ADR-0015's reasoning: the
+  *correctness* guarantee is still the lazy check at use-time
+  (`QuizPolicyService.resolveStartWindow`), not this sweep — it only keeps
+  `Quiz.status` (and anything that lists/filters on it, including a link's
+  own `acceptingAttempts`) from sitting stale on `PUBLISHED` past the
+  deadline the teacher actually set.
+
+  **This was link-`expiresAt`-driven at first, and that was wrong** — caught
+  because in practice every existing link had `expiresAt: null` (teachers
+  configure the deadline once, on the quiz, not again per link), so the
+  original sweeper never fired against real data. It was also wrong in
+  principle: an existing org member can start an attempt directly via `POST
+  /quizzes/{id}/attempts`, with no link involved at all, so a link expiring
+  is not evidence the exam itself is over. `closesAt` is the one field that
+  actually means that.
+
+  `QuizLink.acceptingAttempts` (`QuizLinksService#acceptingAttempts`, private
+  helper shared by `create`'s one-active-link check, `list`, and `preview`)
+  is the single definition of "would a new attempt actually start through
+  this link right now" — it folds in the *quiz's* `status`/`opensAt`/
+  `closesAt` together with the link's own `expiresAt`/`maxUses`, precisely so
+  a link with no expiry of its own still correctly reads as dead once the
+  quiz itself closes.

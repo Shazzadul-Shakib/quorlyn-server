@@ -35,14 +35,17 @@ export class QuizLinkRepository {
     });
   }
 
-  findByIdInQuiz(id: string, quizId: string): Promise<QuizLink | null> {
-    return this.prisma.quizLink.findFirst({ where: { id, quizId } });
-  }
-
-  async revoke(id: string, now: Date): Promise<boolean> {
-    const { count } = await this.prisma.quizLink.updateMany({
-      where: { id, revokedAt: null },
-      data: { revokedAt: now },
+  /**
+   * A hard delete, not a soft-revoke: the row is gone, not flagged. Safe to
+   * do even for a link that already has attempts against it — `Attempt.
+   * quizLinkId` is `onDelete: SetNull`, so those attempts just lose the
+   * back-reference to which link they came through, nothing cascades away.
+   * Conditional on `quizId` (not just `id`) so it can't delete a link that
+   * doesn't belong to the quiz the caller already scoped to.
+   */
+  async remove(id: string, quizId: string): Promise<boolean> {
+    const { count } = await this.prisma.quizLink.deleteMany({
+      where: { id, quizId },
     });
     return count === 1;
   }
@@ -59,7 +62,6 @@ export class QuizLinkRepository {
       UPDATE "QuizLink"
       SET "usedCount" = "usedCount" + 1
       WHERE "id" = ${id}
-        AND "revokedAt" IS NULL
         AND ("maxUses" IS NULL OR "usedCount" < "maxUses")
     `;
     return affected === 1;

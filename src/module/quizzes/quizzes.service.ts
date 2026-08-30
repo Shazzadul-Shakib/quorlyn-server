@@ -145,6 +145,30 @@ export class QuizzesService {
   /** Closing stops new attempts and finalizes the ones still in flight. */
   async close(id: string, organizationId: string): Promise<QuizResponseDto> {
     const quiz = await this.requireQuiz(id, organizationId);
+    const closed = await this.transitionToClosed(id);
+    if (!closed) {
+      throw new ConflictException('Only published quizzes can be closed');
+    }
+    return toQuizResponse(
+      closed,
+      await this.questionRepository.countByQuiz(quiz.id),
+    );
+  }
+
+  /**
+   * System-triggered equivalent of `close()` — same status flip and
+   * in-flight-attempt finalization, minus the org-scoped lookup and the
+   * "already closed" 409, since the caller (`QuizClosingSweeperService`) has
+   * no authenticated org context and treats "nothing to do" as a normal
+   * outcome, not an error. Returns whether it actually closed the quiz.
+   */
+  async autoClose(id: string): Promise<boolean> {
+    return (await this.transitionToClosed(id)) !== null;
+  }
+
+  private async transitionToClosed(
+    id: string,
+  ): Promise<QuizWithCreator | null> {
     const closed = await this.quizRepository.transitionStatus(
       id,
       [QuizStatus.PUBLISHED],
@@ -152,7 +176,7 @@ export class QuizzesService {
       { closedAt: this.clock.now() },
     );
     if (!closed) {
-      throw new ConflictException('Only published quizzes can be closed');
+      return null;
     }
 
     const inFlight = await this.attemptRepository.findInProgressByQuiz(id);
@@ -163,11 +187,7 @@ export class QuizzesService {
         SubmissionCause.QUIZ_CLOSED,
       );
     }
-
-    return toQuizResponse(
-      closed,
-      await this.questionRepository.countByQuiz(quiz.id),
-    );
+    return closed;
   }
 
   async archive(id: string, organizationId: string): Promise<QuizResponseDto> {
