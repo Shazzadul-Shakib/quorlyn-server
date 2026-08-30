@@ -92,6 +92,18 @@ export class StudentProgressEntryDto {
   @ApiProperty() maxScore: number;
   @ApiPropertyOptional({ type: Date, nullable: true })
   lastAttemptAt: Date | null;
+  @ApiProperty({
+    enum: QuizStatus,
+    description: 'For deciding whether the answer key is reviewable yet.',
+  })
+  quizStatus: QuizStatus;
+  @ApiPropertyOptional({ type: Date, nullable: true }) closesAt: Date | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: "The latest submitted attempt's id, to link a review to.",
+  })
+  lastSubmittedAttemptId: string | null;
 }
 
 export class StudentDashboardDto {

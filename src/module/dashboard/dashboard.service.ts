@@ -243,6 +243,12 @@ export class DashboardService {
       const lastAttempt = quizAttempts
         .map((attempt) => attempt.submittedAt ?? attempt.startedAt)
         .sort((a, b) => b.getTime() - a.getTime())[0];
+      const lastSubmittedAttempt = submitted
+        .slice()
+        .sort(
+          (a, b) =>
+            (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0),
+        )[0];
 
       return {
         organizationId: quizAttempts[0].organizationId,
@@ -254,6 +260,9 @@ export class DashboardService {
         bestScore: scores.length > 0 ? Math.max(...scores) : null,
         maxScore: quizAttempts[0].maxScore,
         lastAttemptAt: lastAttempt ?? null,
+        quizStatus: quizAttempts[0].quiz.status,
+        closesAt: quizAttempts[0].quiz.closesAt,
+        lastSubmittedAttemptId: lastSubmittedAttempt?.id ?? null,
       };
     });
 
